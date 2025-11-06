@@ -6,11 +6,14 @@ import uuid
 from datetime import datetime, timedelta
 import logging
 import re
+import os
 import psycopg2
 import bcrypt
 from jose import JWTError, jwt
+from dotenv import load_dotenv
 
-# Схемы Pydantic
+load_dotenv()
+
 from pydantic import BaseModel, field_validator
 
 SECRET_KEY = "your-super-secret-key-change-in-production-123"
@@ -84,7 +87,6 @@ class LoginRequest(BaseModel):
         return v
 
 
-# Функции для работы с БД
 def get_db():
     conn = psycopg2.connect(
         dbname="pr2",
@@ -96,7 +98,43 @@ def get_db():
     return conn
 
 
-# Функции для аутентификации
+def create_first_admin():
+    if os.getenv("CREATE_FIRST_ADMIN", "false").lower() != "true":
+        return
+
+    conn = None
+    cur = None
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("SELECT * FROM users WHERE roles = 'admin'")
+        if cur.fetchone():
+            logger.info("Admin user already exists")
+            return
+
+        admin_id = str(uuid.uuid4())
+        hashed_password = get_password_hash(os.getenv("ADMIN_PASSWORD", "admin123"))
+
+        cur.execute(
+            "INSERT INTO users (id, email, password_hash, name, roles) VALUES (%s, %s, %s, %s, %s)",
+            (admin_id, os.getenv("ADMIN_EMAIL", "admin@system.com"), hashed_password, "System Admin", "admin")
+        )
+        conn.commit()
+        logger.info("✅ First admin user created automatically")
+
+    except Exception as e:
+        logger.error(f"Failed to create admin: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
@@ -125,7 +163,6 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
-# Инициализация FastAPI
 app = FastAPI(title="Users Service", version="1.0.0")
 
 security = HTTPBearer()
@@ -149,8 +186,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         )
     return payload
 
-
-# Эндпоинты
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "users"}
@@ -167,7 +202,6 @@ async def register(user_data: UserCreate):
         conn = get_db()
         cur = conn.cursor()
 
-        # Проверяем существующего пользователя
         cur.execute("SELECT * FROM users WHERE email = %s", (user_data.email,))
         existing_user = cur.fetchone()
 
@@ -178,13 +212,12 @@ async def register(user_data: UserCreate):
                 error={"code": "USER_EXISTS", "message": "User with this email already exists"}
             )
 
-        # Создаем пользователя с ролью 'client' по умолчанию
         user_id = str(uuid.uuid4())
         hashed_password = get_password_hash(user_data.password)
 
         cur.execute(
             "INSERT INTO users (id, email, password_hash, name, roles) VALUES (%s, %s, %s, %s, %s)",
-            (user_id, user_data.email, hashed_password, user_data.name, "client")  # ← просто строка "client"
+            (user_id, user_data.email, hashed_password, user_data.name, "client")
         )
         conn.commit()
 
@@ -302,7 +335,6 @@ async def update_profile(
     cur = conn.cursor()
 
     try:
-        # Получаем текущего пользователя
         cur.execute("SELECT * FROM users WHERE email = %s", (current_user["sub"],))
         user = cur.fetchone()
 
@@ -312,7 +344,6 @@ async def update_profile(
                 detail="User not found"
             )
 
-        # Проверяем email на уникальность если он меняется
         if user_update.email and user_update.email != user[1]:
             cur.execute("SELECT * FROM users WHERE email = %s", (user_update.email,))
             existing_user = cur.fetchone()
@@ -322,7 +353,6 @@ async def update_profile(
                     error={"code": "EMAIL_EXISTS", "message": "Email already in use"}
                 )
 
-        # Обновляем данные
         update_fields = []
         update_values = []
 
@@ -335,7 +365,7 @@ async def update_profile(
             update_values.append(user_update.email)
 
         if update_fields:
-            update_values.append(user[0])  # user_id для WHERE
+            update_values.append(user[0])
             cur.execute(
                 f"UPDATE users SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                 update_values
@@ -378,11 +408,9 @@ async def get_users(
     try:
         offset = (page - 1) * size
 
-        # Получаем пользователей с пагинацией
         cur.execute("SELECT * FROM users ORDER BY created_at DESC LIMIT %s OFFSET %s", (size, offset))
         users = cur.fetchall()
 
-        # Получаем общее количество
         cur.execute("SELECT COUNT(*) FROM users")
         total = cur.fetchone()[0]
 
@@ -419,8 +447,9 @@ async def get_users(
 
 
 if __name__ == "__main__":
-    import uvicorn
+    create_first_admin()
 
+    import uvicorn
     uvicorn.run(
         app,
         host="localhost",
