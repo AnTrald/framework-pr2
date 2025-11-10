@@ -12,8 +12,7 @@ import bcrypt
 from jose import JWTError, jwt
 from dotenv import load_dotenv
 
-if os.path.exists('.env'):
-    load_dotenv()
+load_dotenv()
 
 from pydantic import BaseModel, field_validator
 
@@ -111,10 +110,21 @@ def create_first_admin():
     cur = None
 
     try:
-        conn = get_db()
-        cur = conn.cursor()
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Database connection failed, retrying... ({attempt + 1}/{max_retries})")
+                    import time
+                    time.sleep(2)
+                else:
+                    raise e
 
-        cur.execute("SELECT * FROM users WHERE roles = 'admin'")
+        cur.execute("SELECT * FROM users WHERE role = 'admin'")
         if cur.fetchone():
             logger.info("Admin user already exists")
             return
@@ -123,7 +133,7 @@ def create_first_admin():
         hashed_password = get_password_hash(os.getenv("ADMIN_PASSWORD", "admin123"))
 
         cur.execute(
-            "INSERT INTO users (id, email, password_hash, name, roles) VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO users (id, email, password_hash, name, role) VALUES (%s, %s, %s, %s, %s)",
             (admin_id, os.getenv("ADMIN_EMAIL", "admin@system.com"), hashed_password, "System Admin", "admin")
         )
         conn.commit()
@@ -191,12 +201,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         )
     return payload
 
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Starting users service...")
+    create_first_admin()
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "users"}
 
 
-@app.post("/v1/register", response_model=BaseResponse)
+@app.post("/v1/users/register", response_model=BaseResponse)
 async def register(user_data: UserCreate):
     logger.info(f"Registration attempt for email: {user_data.email}")
 
@@ -221,7 +237,7 @@ async def register(user_data: UserCreate):
         hashed_password = get_password_hash(user_data.password)
 
         cur.execute(
-            "INSERT INTO users (id, email, password_hash, name, roles) VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO users (id, email, password_hash, name, role) VALUES (%s, %s, %s, %s, %s)",
             (user_id, user_data.email, hashed_password, user_data.name, "client")
         )
         conn.commit()
@@ -247,7 +263,7 @@ async def register(user_data: UserCreate):
             conn.close()
 
 
-@app.post("/v1/login", response_model=BaseResponse)
+@app.post("/v1/users/login", response_model=BaseResponse)
 async def login(login_data: LoginRequest):
     logger.info(f"Login attempt for email: {login_data.email}")
 
@@ -291,7 +307,7 @@ async def login(login_data: LoginRequest):
         conn.close()
 
 
-@app.get("/v1/profile", response_model=BaseResponse)
+@app.get("/v1/users/profile", response_model=BaseResponse)
 async def get_profile(current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
@@ -331,7 +347,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         conn.close()
 
 
-@app.put("/v1/profile", response_model=BaseResponse)
+@app.put("/v1/users/profile", response_model=BaseResponse)
 async def update_profile(
         user_update: UserUpdate,
         current_user: dict = Depends(get_current_user)
@@ -425,7 +441,7 @@ async def get_users(
                 "id": user[0],
                 "email": user[1],
                 "name": user[3],
-                "roles": user[4],
+                "role": user[4],
                 "created_at": user[5],
                 "updated_at": user[6]
             })

@@ -10,8 +10,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uuid
 
-if os.path.exists('.env'):
-    load_dotenv()
+load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production-123")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -125,19 +124,19 @@ async def handle_proxy_request(service: str, path: str, data: dict = None, reque
 
 @app.post("/v1/users/register")
 async def gateway_users_register(user_data: UserCreate, request: Request):
-    return await handle_proxy_request("users", "v1/register", user_data.dict(), request)
+    return await handle_proxy_request("users", "v1/users/register", user_data.dict(), request)
 
 @app.post("/v1/users/login")
 async def gateway_users_login(login_data: LoginData, request: Request):
-    return await handle_proxy_request("users", "v1/login", login_data.dict(), request)
+    return await handle_proxy_request("users", "v1/users/login", login_data.dict(), request)
 
 @app.get("/v1/users/profile")
 async def gateway_users_profile(request: Request, current_user: dict = Depends(get_current_user)):
-    return await handle_proxy_request("users", "v1/profile", None, request)
+    return await handle_proxy_request("users", "v1/users/profile", None, request)
 
 @app.put("/v1/users/profile")
 async def gateway_users_update_profile(user_update: UserUpdate, request: Request, current_user: dict = Depends(get_current_user)):
-    return await handle_proxy_request("users", "v1/profile", user_update.dict(), request)
+    return await handle_proxy_request("users", "v1/users/profile", user_update.dict(), request)
 
 @app.get("/v1/users")
 async def gateway_users_list(request: Request, current_user: dict = Depends(get_current_user)):

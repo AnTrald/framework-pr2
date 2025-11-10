@@ -12,8 +12,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 
-if os.path.exists('.env'):
-    load_dotenv()
+load_dotenv()
 
 VALID_STATUS_TRANSITIONS = {
     "created": ["in_progress", "cancelled"],

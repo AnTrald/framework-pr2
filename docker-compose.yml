@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: pr2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - app_network
+
+  service_users:
+    build: ./project/service_users
+    container_name: service_users
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/pr2
+      - SECRET_KEY=your-super-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - CREATE_FIRST_ADMIN=true
+      - ADMIN_EMAIL=admin@pr2.com
+      - ADMIN_PASSWORD=change_this_password_123
+      - USERS_SERVICE_URL=http://service_users:8001
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+
+  service_orders:
+    build: ./project/service_orders
+    container_name: service_orders
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/pr2
+      - SECRET_KEY=your-super-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - USERS_SERVICE_URL=http://service_users:8001
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+
+  api_gateway:
+    build: ./project/api_gateway
+    container_name: api_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=your-super-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - USERS_SERVICE_URL=http://service_users:8001
+      - ORDERS_SERVICE_URL=http://service_orders:8002
+    depends_on:
+      - service_users
+      - service_orders
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+
+networks:
+  app_network:
+    driver: bridge
