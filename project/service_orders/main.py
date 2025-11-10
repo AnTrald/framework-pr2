@@ -83,10 +83,10 @@ class OrderStatus:
     CANCELLED = "cancelled"
 
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production-123")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-USERS_SERVICE_URL = os.getenv("USERS_SERVICE_URL", "http://localhost:8001")
+USERS_SERVICE_URL = os.getenv("USERS_SERVICE_URL")
 ORDER_STATUSES = ["created", "in_progress", "completed", "cancelled"]
 
 
@@ -101,14 +101,6 @@ def get_db():
             password=result.password,
             host=result.hostname,
             port=result.port
-        )
-    else:
-        conn = psycopg2.connect(
-            dbname="pr2",
-            user="postgres",
-            password="avt223450",
-            host="localhost",
-            port="5432"
         )
     return conn
 
@@ -534,7 +526,8 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        app,
+        'main:app',
+        reload=True,
         host="localhost",
         port=8002,
     )

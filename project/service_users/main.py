@@ -12,13 +12,14 @@ import bcrypt
 from jose import JWTError, jwt
 from dotenv import load_dotenv
 
-load_dotenv()
+if os.path.exists('.env'):
+    load_dotenv()
 
 from pydantic import BaseModel, field_validator
 
-SECRET_KEY = "your-super-secret-key-change-in-production-123"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 logger = logging.getLogger("users_service")
 logger.setLevel(logging.INFO)
@@ -88,13 +89,17 @@ class LoginRequest(BaseModel):
 
 
 def get_db():
-    conn = psycopg2.connect(
-        dbname="pr2",
-        user="postgres",
-        password="avt223450",
-        host="localhost",
-        port="5432"
-    )
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        import urllib.parse
+        result = urllib.parse.urlparse(database_url)
+        conn = psycopg2.connect(
+            dbname=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            port=result.port
+        )
     return conn
 
 
@@ -450,8 +455,10 @@ if __name__ == "__main__":
     create_first_admin()
 
     import uvicorn
+
     uvicorn.run(
-        app,
+        'main:app',
+        reload=True,
         host="localhost",
         port=8001,
     )
